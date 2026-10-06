@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Cesium-Twin-Agent 三维数字孪生与仿真控制台</title>
+  <style>
+    body { margin: 0; background: #0b0f19; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #header { padding: 12px 24px; background: #161e2e; border-bottom: 1px solid #2d3748; display: flex; justify-content: space-between; align-items: center; }
+    #canvas-container { width: 100vw; height: calc(100vh - 60px); position: relative; }
+    canvas { width: 100%; height: 100%; display: block; }
+    .control-panel { position: absolute; top: 20px; left: 20px; background: rgba(22, 30, 46, 0.9); backdrop-filter: blur(8px); padding: 18px; border-radius: 8px; border: 1px solid #374151; width: 300px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    .panel-title { font-size: 14px; font-weight: bold; margin-bottom: 12px; color: #38bdf8; }
+    button { background: #2563eb; color: #fff; border: none; padding: 10px 14px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px; font-weight: 500; transition: background 0.2s; }
+    button:hover { background: #1d4ed8; }
+    .btn-green { background: #059669; }
+    .btn-green:hover { background: #047857; }
+    .status { margin-top: 14px; font-size: 13px; color: #94a3b8; line-height: 1.5; padding: 10px; background: #0f172a; border-radius: 4px; border: 1px solid #1e293b; }
+    .metric { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <strong>Cesium-Twin-Agent · 水动力淹没与态势协同控制台</strong>
+    <span style="font-size: 13px; color: #10b981;">● 孪生服务运行中 | 60 FPS</span>
+  </div>
+  <div id="canvas-container">
+    <canvas id="viewCanvas"></canvas>
+    <div class="control-panel">
+      <div class="panel-title">时空仿真控制状态</div>
+      <div class="metric">
+        <span>当前监测水位:</span>
+        <strong id="waterElevation" style="color: #60a5fa;">18.50 m</strong>
+      </div>
+      <div class="metric">
+        <span>防汛警戒水位:</span>
+        <strong style="color: #f87171;">21.00 m</strong>
+      </div>
+      <button id="simBtn">触发暴雨水动力动态反演 (50mm)</button>
+      <button id="droneBtn" class="btn-green">调度无人机三维样条漫游巡检</button>
+      <div class="status" id="logBox">系统待机中，等待 Agent 状态指令...</div>
+    </div>
+  </div>
+  <script>
+    const canvas = document.getElementById('viewCanvas');
+    const ctx = canvas.getContext('2d');
+    function resize() {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let water = 18.50;
+    let t = 0;
+    function render() {
+      t += 0.03;
+      ctx.fillStyle = '#0b0f19';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // 模拟 WebGL/Cesium 水面动态波动切片
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.lineWidth = 1.2;
+      for (let y = 80; y < canvas.height; y += 35) {
+        ctx.beginPath();
+        for (let x = 0; x < canvas.width; x += 15) {
+          const wave = Math.sin(x * 0.02 + t) * 10 + Math.cos(y * 0.02 + t) * 6;
+          if (x === 0) ctx.moveTo(x, y + wave);
+          else ctx.lineTo(x, y + wave);
+        }
+        ctx.stroke();
+      }
+      requestAnimationFrame(render);
+    }
+    render();
+
+    document.getElementById('simBtn').onclick = () => {
+      water += 0.8;
+      document.getElementById('waterElevation').innerText = `${water.toFixed(2)} m`;
+      const isWarn = water >= 21.0;
+      document.getElementById('logBox').innerHTML = `<strong>[Agent 决策]</strong> 降雨 50mm 驱动水动力抬升，水位达到 ${water.toFixed(2)}m${isWarn ? ' <span style="color:#ef4444">(超过警戒线)</span>' : ''}`;
+    };
+    document.getElementById('droneBtn').onclick = () => {
+      document.getElementById('logBox').innerHTML = '<strong>[Agent 调度]</strong> 无人机沿三维样条航迹自主巡检，航点同步至 Cesium 视点矩阵';
+    };
+  </script>
+</body>
+</html>
