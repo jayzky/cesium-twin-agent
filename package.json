@@ -1,0 +1,9 @@
+{
+  "name": "cesium-twin-agent",
+  "version": "0.1.0",
+  "description": "Agent-driven 3D Digital Twin and Dynamic Hydrodynamic Flood Simulation",
+  "author": "Zhang Kuo",
+  "scripts": {
+    "test": "pytest tests"
+  }
+}
