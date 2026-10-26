@@ -1,47 +1,44 @@
 # Cesium-Twin-Agent
 
-Cesium-Twin-Agent 是一个由智能体（Agent）驱动的三维数字孪生与水动力淹没仿真协同平台。
+Three.js 三维积水态势与巡检演示。仓库名称保留历史命名，当前前端使用 Three.js，并未集成 Cesium、实测水文、排水管网或实际无人机服务。
 
-## 背景与痛点
+## 已实现内容
 
-传统的数字孪生平台普遍存在“重展示、轻决策、无交互”的问题：
-- 场景动画写死：淹没过程通常使用离线烘焙动画，无法根据降雨量、排水管网排涝能力进行动态物理推演。
-- 视点巡检僵化：缺乏根据险情自主调度巡视视角的能力，人工漫游视角容易发生剧烈抖动或碰撞。
-- 业务系统与三维底座割裂：调度指令与 WebGL 着色器之间缺乏标准化事件中台。
+- 通过共享配置集中管理基准、警戒、最高模拟水位、降雨预设与巡检周期。
+- 模拟累计降雨按 `水位增量 = 降雨量(mm) × 0.016` 计算，取两位小数并限制在最高模拟水位。该规则仅供交互演示，不是水动力模型。
+- 模拟水位与场景高度采用 `sceneY = waterLevelM - sceneDatumM`；当前场景以一个场景单位对应一个模拟米绘制。
+- 根据建筑网格的实际包围盒底部和水面范围统计受影响建筑，并高亮相关网格；判断为平均水面高于建筑底部且平面范围相交。GLSL 波浪不参与统计，不代表实际灾损或危险等级。
+- 浏览器巡检采用 Three.js Catmull-Rom 曲线，按帧间隔 delta 和配置周期推进，支持开始、暂停、继续及重置。没有固定 FPS 承诺。
+- Python `LinearWaypointInterpolator` 只做航点分段线性插值，与浏览器样条路径实现分开。
 
-Cesium-Twin-Agent 通过“Agent 调度中台 + 自定义 GLSL 着色器 + 三维平滑样条插值”，实现水动力态势反演与应急无人机巡检一体化联动。
+## 运行与验证
 
-## 系统架构
-
-```
-[ 气象降雨 / 险情监控数据 ]
-             │
-             ▼
-[ Agent 决策中台 (Scenario Bridge) ]
-   ├─ 水动力动态积水抬升物理模型 (评估警戒水位与溢流风险)
-   └─ 无人机巡查航线样条平滑插值 (Catmull-Rom 3D 轨迹规划)
-             │
-             ▼ (WebSocket / Event Stream)
-[ WebGL / Cesium 三维渲染底座 ]
-   ├─ 自定义 GLSL 水动力漫延着色器 (动态波浪干涉 + 渐变反射材质)
-   └─ 相机矩阵插值平滑漫游 (60 FPS 流畅巡检)
-```
-
-## 核心特性
-
-- 自定义 GLSL 积水仿真材质：编写原生着色器代码，通过双正弦干涉波与法线扰动模拟真实水面波光与深浅水渐变。
-- 水动力降雨反演：根据输入降雨强度（mm）动态计算积水深浅与受灾预警等级。
-- 航点样条平滑插值：实现航点之间的平滑过渡插值算法，消除三维视角漫游时的跳变卡顿。
-- 轻量可交互控制台：内嵌 `src/client/twin_viewer.html`，无需重型部署即可实时调试着色器与漫游逻辑。
-
-## 快速开始
-
-### 运行测试
+在仓库目录运行测试，无需新增依赖：
 
 ```powershell
-pytest -v
+& 'D:/anaconda/python.exe' -m pytest -q
+node --test tests/test_frontend.mjs
 ```
 
-### 体验三维态势看板
+已配置 npm 环境时也可执行 `npm run test:js`，该脚本只运行前端逻辑测试；原有 `npm test` 仍运行 Python 测试。
 
-在浏览器直接打开 `src/client/twin_viewer.html`，点击控制台按钮即可实时查看水动力淹没抬升与航线巡视状态。
+跨语言水位契约测试会调用 PATH 中的 Node。若使用其他 Node 路径，可先设置 `$env:NODE_BINARY`；没有 Node 时该项显式跳过，前端测试仍需单独执行。
+
+浏览器需要通过静态 HTTP 读取 ES 模块和共享 JSON。手动在仓库目录启动：
+
+```powershell
+& 'D:/anaconda/python.exe' -m http.server 8001 --bind 127.0.0.1
+```
+
+随后访问 `http://127.0.0.1:8001/src/client/twin_viewer.html`。使用完毕按 Ctrl+C 关闭静态服务。直接双击 `file://` 页面不能正常读取配置与模块。
+
+页面中的 Three.js、OrbitControls 与图标仍依赖 CDN 网络；无法加载时页面显示初始化失败，不会声称后端正常。
+
+## 文件与接口边界
+
+- `src/shared/scenario_config.json`：Python 与浏览器共用的模拟约定与预设。
+- `src/client/scenario_model.mjs`：可在 Node 中测试的水位、建筑判定和巡检状态逻辑。
+- `src/client/twin_viewer.html`：Three.js 场景和本地交互。
+- `src/server/scenario_bridge.py`：Python 模拟命令处理，支持 `SIMULATE_RAINFALL`、`SET_PRESET`、`RESET_WATER` 和线性示例航线输出。
+
+浏览器只读取共享配置，没有调用 Python 命令处理器；两者数值约定通过测试核对，不代表前后端通信已经打通。界面日志为浏览器本地事件，不是 WebSocket 或 Agent 决策记录。建筑、预设降雨和航线均为模拟数据。

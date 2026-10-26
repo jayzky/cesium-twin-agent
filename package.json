@@ -1,9 +1,10 @@
 {
   "name": "cesium-twin-agent",
   "version": "0.1.0",
-  "description": "Agent-driven 3D Digital Twin and Dynamic Hydrodynamic Flood Simulation",
+  "description": "Three.js simulated water-level visualization and inspection animation demo",
   "author": "Zhang Kuo",
   "scripts": {
-    "test": "pytest tests"
+    "test": "pytest tests",
+    "test:js": "node --test tests/test_frontend.mjs"
   }
 }

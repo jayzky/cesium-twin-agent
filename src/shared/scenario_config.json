@@ -1,0 +1,15 @@
+{
+  "base_water_level_m": 18.5,
+  "alert_water_level_m": 21.0,
+  "max_water_level_m": 24.5,
+  "scene_datum_m": 17.0,
+  "rainfall_rise_per_mm": 0.016,
+  "rainfall_step_mm": 50,
+  "water_half_extent": 60,
+  "inspection_duration_seconds": 20,
+  "presets": [
+    {"id": "baseline", "label": "基准模拟", "rainfall_mm": 0},
+    {"id": "rain50", "label": "累计降雨 50 mm", "rainfall_mm": 50},
+    {"id": "rain200", "label": "累计降雨 200 mm", "rainfall_mm": 200}
+  ]
+}
