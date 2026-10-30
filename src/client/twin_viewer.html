@@ -157,6 +157,9 @@
     .btn:hover { opacity: 0.9; transform: translateY(-1px); }
     .btn-green { background: linear-gradient(135deg, #059669, #10b981); }
     .btn-rose { background: linear-gradient(135deg, #e11d48, #f43f5e); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .performance { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .performance p { font-size: 11px; line-height: 1.6; color: #94a3b8; margin-top: 8px; }
 
     /* Right Bottom Log Console */
     #log-console {
@@ -185,7 +188,7 @@
       <span>模拟积水态势与三维巡检</span>
     </div>
     <div class="telemetry-badges">
-      <div class="badge"><div class="dot"></div><span>Three.js / WebGL</span></div>
+      <div class="badge"><div class="dot"></div><span id="render-status">Three.js / WebGL</span></div>
       <div class="badge"><i data-lucide="droplet" style="width:14px;color:var(--accent);"></i><span id="txt-rain">模拟累计降雨: -- mm</span></div>
       <div class="badge"><i data-lucide="radio" style="width:14px;color:var(--warning);"></i><span id="connection-status">本地模拟 · 未连接后端</span></div>
     </div>
@@ -245,7 +248,19 @@
       <i data-lucide="shield-alert" style="width:15px;"></i>
       <span>重置模拟水位</span>
     </button>
+    <button class="btn" id="btn-export">
+      <i data-lucide="download" style="width:15px;"></i>
+      <span>导出场景快照 JSON</span>
+    </button>
     <p style="margin-top:12px;font-size:11px;line-height:1.6;color:#94a3b8;">水位按简化规则计算；建筑与巡检均为演示数据。计数依据平均水面与建筑底部相交，不代表实际灾损。</p>
+    <section class="performance" aria-label="浏览器性能采样">
+      <div class="panel-title">当前浏览器性能采样</div>
+      <div class="stat-row"><span>平均 FPS</span><span class="stat-val" id="val-fps">等待采样</span></div>
+      <div class="stat-row"><span>平均 / P95 帧间隔</span><span class="stat-val" id="val-frame-time">-- / -- ms</span></div>
+      <div class="stat-row"><span>实际窗口 / 样本数</span><span class="stat-val" id="val-samples">0.00 s / 0</span></div>
+      <button class="btn" id="btn-animation">暂停渲染与采样</button>
+      <p id="sampling-note">最近 5 秒的动画帧间隔；不代表 GPU 耗时或设备性能保证。暂停或页面隐藏时清空采样，恢复后重新计时。</p>
+    </section>
   </div>
 
   <!-- Bottom Log Console -->
@@ -263,7 +278,7 @@
     import {
       validateConfig, initialWaterState, addRainfall, presetWaterState,
       sceneWaterElevation, affectedBuildings, initialInspectionState,
-      inspectionAction, advanceInspection
+      inspectionAction, advanceInspection, createSceneSnapshot, FrameSampler
     } from './scenario_model.mjs';
 
     async function initialize() {
@@ -334,6 +349,7 @@
           geo.computeBoundingBox();
           const bounds = geo.boundingBox;
           buildingPositions.push({
+            id: `building-${x}-${z}`,
             mesh: b,
             bottomY: b.position.y + bounds.min.y,
             minX: b.position.x + bounds.min.x,
@@ -417,6 +433,10 @@
 
       let waterState = initialWaterState(config);
       let inspectionState = initialInspectionState();
+      const frameSampler = new FrameSampler(5000);
+      let animationPaused = false;
+      let contextLost = false;
+      let lastFrameTimestamp = null;
       droneMesh.position.copy(curve.getPointAt(0));
 
       const valWater = document.getElementById('val-water');
@@ -506,14 +526,73 @@
         updateInspectionView();
         appendLog('模拟巡检已停止，位置重置为路线起点。');
       };
+      document.getElementById('btn-export').onclick = () => {
+        try {
+          const snapshot = createSceneSnapshot({config, waterState, inspectionState,
+            buildings: buildingPositions, performance: frameSampler.report()});
+          snapshot.view = {rendering_paused: animationPaused, page_hidden: document.hidden,
+            webgl_context_lost: contextLost, camera_position: camera.position.toArray(),
+            orbit_target: controls.target.toArray(), viewport_pixels: [window.innerWidth, window.innerHeight],
+            renderer_pixel_ratio: renderer.getPixelRatio()};
+          const blob = new Blob([JSON.stringify(snapshot, null, 2)], {type: 'application/json;charset=utf-8'});
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `simulated-scene-${snapshot.exported_at.replace(/[:.]/g, '-')}.json`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          appendLog(`已导出模拟场景：${snapshot.impact.affected_buildings} / ${snapshot.impact.total_buildings} 栋建筑，含判定依据与采样信息。`);
+        } catch (error) {
+          appendLog(`导出失败：${error.message}`);
+          console.error(error);
+        }
+      };
+
+      function updatePerformanceView() {
+        const report = frameSampler.report();
+        const reason = {paused: '渲染已暂停', hidden: '页面隐藏', 'context-lost': 'WebGL 已中断'}[report.suspended_reason];
+        document.getElementById('val-fps').textContent = reason ||
+          (report.average_fps === null ? '等待采样' : report.average_fps.toFixed(1));
+        document.getElementById('val-frame-time').textContent = report.sample_count
+          ? `${report.mean_frame_interval_ms.toFixed(1)} / ${report.p95_frame_interval_ms.toFixed(1)} ms` : '-- / -- ms';
+        document.getElementById('val-samples').textContent = `${(report.sampled_duration_ms / 1000).toFixed(2)} s / ${report.sample_count}`;
+      }
+
+      function updateSamplingState() {
+        frameSampler.setSuspended(contextLost ? 'context-lost' : document.hidden ? 'hidden' : animationPaused ? 'paused' : null);
+        lastFrameTimestamp = null;
+        updatePerformanceView();
+      }
+
+      document.getElementById('btn-animation').onclick = () => {
+        animationPaused = !animationPaused;
+        document.getElementById('btn-animation').textContent = animationPaused ? '恢复渲染与采样' : '暂停渲染与采样';
+        document.getElementById('render-status').textContent = animationPaused ? 'WebGL · 已暂停' : 'Three.js / WebGL';
+        updateSamplingState();
+        appendLog(animationPaused ? '渲染与采样已暂停，模拟时间停止。' : '渲染与采样已恢复，重新计时。');
+      };
+      document.addEventListener('visibilitychange', updateSamplingState);
+      renderer.domElement.addEventListener('webglcontextlost', event => {
+        event.preventDefault();
+        contextLost = true;
+        updateSamplingState();
+        document.getElementById('render-status').textContent = 'WebGL 上下文丢失';
+        document.getElementById('connection-status').textContent = '渲染已停止，请刷新页面';
+        document.querySelectorAll('button, select').forEach(element => { element.disabled = element.id !== 'btn-export'; });
+        appendLog('WebGL 上下文丢失：已停止渲染和采样。可导出当前状态，刷新页面重新初始化。');
+      });
       updateWaterView();
+      updateSamplingState();
 
       // 7. 渲染循环
-      const clock = new THREE.Clock();
       let elapsedTime = 0;
-      function animate() {
+      let lastPerformanceUpdate = 0;
+      function animate(timestamp) {
         requestAnimationFrame(animate);
-        const delta = clock.getDelta();
+        if (animationPaused || document.hidden || contextLost) return;
+        const delta = lastFrameTimestamp === null ? 0 : (timestamp - lastFrameTimestamp) / 1000;
+        lastFrameTimestamp = timestamp;
+        frameSampler.sample(timestamp);
         elapsedTime += delta;
 
         // 着色器时间步进
@@ -529,8 +608,12 @@
 
         controls.update();
         renderer.render(scene, camera);
+        if (timestamp - lastPerformanceUpdate >= 500) {
+          updatePerformanceView();
+          lastPerformanceUpdate = timestamp;
+        }
       }
-      animate();
+      requestAnimationFrame(animate);
 
       window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -541,6 +624,7 @@
     initialize().catch(error => {
       document.getElementById('log-text').textContent = `初始化失败：${error.message}。请通过 HTTP 打开本页并检查浏览器控制台。`;
       document.getElementById('connection-status').textContent = '初始化失败';
+      document.getElementById('render-status').textContent = 'WebGL 未就绪';
       document.querySelectorAll('button, select').forEach(element => { element.disabled = true; });
       console.error(error);
     });

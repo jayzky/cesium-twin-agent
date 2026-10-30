@@ -68,6 +68,8 @@ class ScenarioBridge:
             "warning": self.current_water_level >= self.alert_level,
             "rainfall_total_mm": self.rainfall_total_mm,
             "simulation": True,
+            "config_version": SCENARIO_CONFIG["config_version"],
+            "scene_id": SCENARIO_CONFIG["scene_id"],
         }
 
     def process_agent_command(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:

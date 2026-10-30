@@ -1,4 +1,6 @@
 {
+  "config_version": "1.0.0",
+  "scene_id": "simulated-building-grid-v1",
   "base_water_level_m": 18.5,
   "alert_water_level_m": 21.0,
   "max_water_level_m": 24.5,

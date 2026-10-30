@@ -96,11 +96,14 @@ const results = [0, 50, 50, 56.25, 900, 1e308].map(rain => {
   state = addRainfall(state, rain, config);
   return [state.level, state.rainfallMm, sceneWaterElevation(state.level, config)];
 });
-console.log(JSON.stringify(results));
+console.log(JSON.stringify({config_version: config.config_version, scene_id: config.scene_id, results}));
 """
     completed = subprocess.run([node, "--input-type=module", "-e", script], cwd=client,
                                capture_output=True, text=True, check=True, timeout=10)
     bridge = ScenarioBridge()
-    for rain, frontend in zip([0, 50, 50, 56.25, 900, 1e308], json.loads(completed.stdout)):
+    frontend_output = json.loads(completed.stdout)
+    for rain, frontend in zip([0, 50, 50, 56.25, 900, 1e308], frontend_output["results"]):
         result = bridge.process_agent_command("SIMULATE_RAINFALL", {"rainfall_mm": rain})
+        assert result["config_version"] == frontend_output["config_version"]
+        assert result["scene_id"] == frontend_output["scene_id"]
         assert frontend == pytest.approx([result["water_level"], result["rainfall_total_mm"], result["scene_water_y"]])
